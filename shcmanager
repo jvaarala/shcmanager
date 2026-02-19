@@ -214,7 +214,7 @@ while true; do
       selectedForUninstall=("${selectedForUninstall[@]/$cursorIndex/}")
     fi
 
-    # Filter out empty elements
+    # Filter out empty elements from both arrays
     filtered_selectedForInstall=()
     for s in "${selectedForInstall[@]}"; do
       if [[ -n "$s" ]]; then
@@ -222,6 +222,14 @@ while true; do
       fi
     done
     selectedForInstall=("${filtered_selectedForInstall[@]}")
+
+    filtered_selectedForUninstall=()
+    for s in "${selectedForUninstall[@]}"; do
+      if [[ -n "$s" ]]; then
+        filtered_selectedForUninstall[${#filtered_selectedForUninstall[@]}]="$s"
+      fi
+    done
+    selectedForUninstall=("${filtered_selectedForUninstall[@]}")
     ;;
 
   # u - select option
@@ -244,7 +252,7 @@ while true; do
       selectedForInstall=("${selectedForInstall[@]/$cursorIndex/}")
     fi
 
-    # Filter out empty elements
+    # Filter out empty elements from both arrays
     filtered_selectedForUninstall=()
     for s in "${selectedForUninstall[@]}"; do
       if [[ -n "$s" ]]; then
@@ -252,6 +260,14 @@ while true; do
       fi
     done
     selectedForUninstall=("${filtered_selectedForUninstall[@]}")
+
+    filtered_selectedForInstall=()
+    for s in "${selectedForInstall[@]}"; do
+      if [[ -n "$s" ]]; then
+        filtered_selectedForInstall[${#filtered_selectedForInstall[@]}]="$s"
+      fi
+    done
+    selectedForInstall=("${filtered_selectedForInstall[@]}")
     ;;
 
     # Enter to confirm selection
