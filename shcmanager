@@ -1,3 +1,10 @@
+#!/usr/bin/env bash
+
+# If running under zsh, re-execute with bash
+if [ -n "$ZSH_VERSION" ]; then
+  exec bash "$0" "$@"
+fi
+
 # Usage
 if [ $# -ne 0 ] && [ "$1" != "create" ]; then
   echo "Usage: $0 [create <plugin_name>]"
@@ -7,8 +14,11 @@ elif [ "$1" = "create" ] && [ $# -ne 2 ]; then
   exit 1
 fi
 
+# Get the directory where the script is located
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
 # Load configuration
-config_file=".shcmanager.config"
+config_file="$script_dir/.shcmanager.config"
 work_dir=""
 plugin_dir=""
 
@@ -29,15 +39,17 @@ green_text() {
 }
 
 if [ ! -f "$config_file" ]; then
-  echo "$yellow_warning Config file not found at $config_file"
-  read -p "Do you want to create the config file? (y/n): " create_config
+  echo -e "$yellow_warning Config file not found at $config_file"
+  printf "Do you want to create the config file? (y/n): "
+  read create_config
   if [ "$create_config" = "y" ]; then
-    read -p "Enter the location for WORK_DIR: " wd
+    printf "Enter the location for WORK_DIR: "
+    read wd
     echo "WORK_DIR=$wd" >"$config_file"
-    echo "$green_ok Config file created at $config_file"
+    echo -e "$green_ok Config file created at $config_file"
     work_dir=$(eval echo "$wd")
   else
-    echo "$red_x Config file creation aborted. You need to create the config file ($config_file) and set WORK_DIR to proceed."
+    echo -e "$red_x Config file creation aborted. You need to create the config file ($config_file) and set WORK_DIR to proceed."
     exit 1
   fi
 else
@@ -52,7 +64,7 @@ fi
 if [ -n "$work_dir" ]; then
   plugin_dir="$work_dir/plugins"
 else
-  echo "$yellow_warning WORK_DIR not found in config file!"
+  echo -e "$yellow_warning WORK_DIR not found in config file!"
   exit 1
 fi
 
@@ -65,30 +77,41 @@ if [ "$1" = "create" ]; then
     mkdir -p "$plugin_dir"
   fi
 
-  cat <<EOL >"$file_path"
-install_$filename() {
+  cat <<'EOL' >"$file_path"
+source "$SHCMANAGER_ADAPTERS_DIR/brew_package"
+source "$SHCMANAGER_ADAPTERS_DIR/repository"
+source "$SHCMANAGER_ADAPTERS_DIR/symlink"
+
+install_FILENAME() {
   echo ""
-  echo "Installing $filename..."
+  echo "Installing FILENAME..."
 }
 
-uninstall_$filename() {
+uninstall_FILENAME() {
   echo ""
-  echo "Uninstalling $filename..."
+  echo "Uninstalling FILENAME..."
 }
 EOL
 
-  echo "$green_ok Plugin template created at $file_path"
+  # Replace FILENAME placeholder with actual filename
+  sed -i.bak "s/FILENAME/$filename/g" "$file_path"
+  rm -f "$file_path.bak"
+
+  echo -e "$green_ok Plugin template created at $file_path"
   exit 1
 fi
 
+# Export the adapters directory for plugins to use
+export SHCMANAGER_ADAPTERS_DIR="$script_dir/adapters"
+
 # Load "plugins"
-options=()
+menu_options=()
 for file in "$plugin_dir"/*; do
   if [ -f "$file" ]; then
     # shellcheck source=/dev/null
     source "$file"
     filename=$(basename "$file")
-    options+=("${filename%.*}")
+    menu_options=("${menu_options[@]}" "${filename%.*}")
   fi
 done
 
@@ -101,7 +124,7 @@ cursorIndex=0
 display_menu() {
   clear
   echo ""
-  for index in "${!options[@]}"; do
+  for index in "${!menu_options[@]}"; do
     selectedForInstall_contains=false
     selectedForUninstall_contains=false
     for s in "${selectedForInstall[@]}"; do
@@ -122,23 +145,23 @@ display_menu() {
 
     if [ "$index" -eq "$cursorIndex" ]; then
       if $selectedForInstall_contains; then
-        final_string="$spacer_with_cursor$(green_text "${options[index]}") $green_ok"
+        final_string="$spacer_with_cursor$(green_text "${menu_options[index]}") $green_ok"
       elif $selectedForUninstall_contains; then
-        final_string="$spacer_with_cursor$(red_text "${options[index]}") $red_x"
+        final_string="$spacer_with_cursor$(red_text "${menu_options[index]}") $red_x"
       else
-        final_string="$spacer_with_cursor${options[index]}"
+        final_string="$spacer_with_cursor${menu_options[index]}"
       fi
     else
       if $selectedForInstall_contains; then
-        final_string="$spacer$(green_text "${options[index]}") $green_ok"
+        final_string="$spacer$(green_text "${menu_options[index]}") $green_ok"
       elif $selectedForUninstall_contains; then
-        final_string="$spacer$(red_text "${options[index]}") $red_x"
+        final_string="$spacer$(red_text "${menu_options[index]}") $red_x"
       else
-        final_string="$spacer${options[index]}"
+        final_string="$spacer${menu_options[index]}"
       fi
     fi
 
-    echo "${final_string//_/ }"
+    echo -e "${final_string//_/ }"
   done
 
   echo ""
@@ -159,14 +182,14 @@ while true; do
   k)
     ((cursorIndex--))
     if ((cursorIndex < 0)); then
-      cursorIndex=$((${#options[@]} - 1))
+      cursorIndex=$((${#menu_options[@]} - 1))
     fi
     ;;
 
   # l - move cursor down
   l)
     ((cursorIndex++))
-    if ((cursorIndex >= ${#options[@]})); then
+    if ((cursorIndex >= ${#menu_options[@]})); then
       cursorIndex=0
     fi
     ;;
@@ -186,7 +209,7 @@ while true; do
       selectedForInstall=("${selectedForInstall[@]/$cursorIndex/}")
     else
       # Add to the selectedForInstall array
-      selectedForInstall+=("$cursorIndex")
+      selectedForInstall[${#selectedForInstall[@]}]="$cursorIndex"
       # Remove from the selectedForUninstall array if present
       selectedForUninstall=("${selectedForUninstall[@]/$cursorIndex/}")
     fi
@@ -195,7 +218,7 @@ while true; do
     filtered_selectedForInstall=()
     for s in "${selectedForInstall[@]}"; do
       if [[ -n "$s" ]]; then
-        filtered_selectedForInstall+=("$s")
+        filtered_selectedForInstall[${#filtered_selectedForInstall[@]}]="$s"
       fi
     done
     selectedForInstall=("${filtered_selectedForInstall[@]}")
@@ -216,7 +239,7 @@ while true; do
       selectedForUninstall=("${selectedForUninstall[@]/$cursorIndex/}")
     else
       # Add to the selectedForUninstall array
-      selectedForUninstall+=("$cursorIndex")
+      selectedForUninstall[${#selectedForUninstall[@]}]="$cursorIndex"
       # Remove from the selectedForInstall array if present
       selectedForInstall=("${selectedForInstall[@]/$cursorIndex/}")
     fi
@@ -225,7 +248,7 @@ while true; do
     filtered_selectedForUninstall=()
     for s in "${selectedForUninstall[@]}"; do
       if [[ -n "$s" ]]; then
-        filtered_selectedForUninstall+=("$s")
+        filtered_selectedForUninstall[${#filtered_selectedForUninstall[@]}]="$s"
       fi
     done
     selectedForUninstall=("${filtered_selectedForUninstall[@]}")
@@ -240,21 +263,21 @@ while true; do
   esac
 done
 
-# Sort the arrays in same order as the options array
+# Sort the arrays in same order as the menu_options array
 sorted_selectedForInstall=()
-for i in "${!options[@]}"; do
+for i in "${!menu_options[@]}"; do
   for j in "${selectedForInstall[@]}"; do
     if [[ "$i" -eq "$j" ]]; then
-      sorted_selectedForInstall+=("$i")
+      sorted_selectedForInstall[${#sorted_selectedForInstall[@]}]="$i"
     fi
   done
 done
 
 sorted_selectedForUninstall=()
-for i in "${!options[@]}"; do
+for i in "${!menu_options[@]}"; do
   for j in "${selectedForUninstall[@]}"; do
     if [[ "$i" -eq "$j" ]]; then
-      sorted_selectedForUninstall+=("$i")
+      sorted_selectedForUninstall[${#sorted_selectedForUninstall[@]}]="$i"
     fi
   done
 done
@@ -262,7 +285,7 @@ clear
 
 # Install and uninstall
 for i in "${sorted_selectedForInstall[@]}"; do
-  function_name="install_${options[i]}"
+  function_name="install_${menu_options[i]}"
   if declare -f "$function_name" >/dev/null; then
     eval "$function_name"
   else
@@ -271,7 +294,7 @@ for i in "${sorted_selectedForInstall[@]}"; do
 done
 
 for i in "${sorted_selectedForUninstall[@]}"; do
-  function_name="uninstall_${options[i]}"
+  function_name="uninstall_${menu_options[i]}"
   if declare -f "$function_name" >/dev/null; then
     eval "$function_name"
   else
@@ -280,5 +303,5 @@ for i in "${sorted_selectedForUninstall[@]}"; do
 done
 
 echo ""
-echo "$green_ok It's all shcmanaged!"
+echo -e "$green_ok It's all shcmanaged!"
 echo ""
